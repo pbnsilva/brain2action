@@ -9,6 +9,9 @@ END_BYTE = 0xC0
 
 port = "/dev/tty.usbserial-DB00MAB7"
 baudrate = 115200
+outfile = 'bci.csv'
+
+outfile = open(outfile, 'w')
 
 ser = serial.Serial(port, baudrate, timeout=10)
 
@@ -35,6 +38,7 @@ state = 1
 # Starts the stream
 ser.write(b'b')
 
+line = []
 while True:
     try:
         # header
@@ -42,6 +46,7 @@ while True:
             b = read(1)
             if struct.unpack('B', b)[0] == START_BYTE:
                 sample_n = struct.unpack('B', read(1))[0]
+                line = [time.time(), sample_n]
                 print 'sample ', str(sample_n)
             state = 2
 
@@ -57,17 +62,23 @@ while True:
                     pre_fix = '\x00'
                 bcr = pre_fix + bc
                 mi = struct.unpack('>i', bcr)[0]
-                print 'EEG ', mi * 4.5 / float((pow(2, 23) - 1)) / 24. * 1000000.
+                value = mi * 4.5 / float((pow(2, 23) - 1)) / 24. * 1000000.
+                line += [value]
+                # print 'EEG ', mi * 4.5 / float((pow(2, 23) - 1)) / 24. * 1000000.
             state = 3
 
         elif state == 3:
-            # accelerometer
+            # # accelerometer
             for a in xrange(3):
                 acc = struct.unpack('>h', read(2))[0]
-                print 'ACC ', acc * 0.002 / pow(2, 4)
+                # print 'ACC ', acc * 0.002 / pow(2, 4)
             state = 4
 
         elif state == 4:
+            if len(line) == 10:
+                outfile.write(','.join(map(str,line))+'\n') 
+            else:
+                assert False
             # end
             be = struct.unpack('B', read(1))[0]
             state = 1
@@ -76,4 +87,5 @@ while True:
         print 'closing'
         ser.write(b's')
         ser.close()
+        outfile.close()
         sys.exit()
