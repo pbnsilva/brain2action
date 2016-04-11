@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.os.Binder;
 import android.os.Handler;
@@ -18,6 +19,7 @@ import com.felhr.usbserial.UsbSerialDevice;
 import com.felhr.usbserial.UsbSerialInterface;
 
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,14 +28,32 @@ import java.util.Map;
  */
 public class MotionSuitService extends Service {
 
-    private static final byte ARDUINO_VENDOR_ID = (byte) 0x2A03;
+    private static final int ARDUINO_VENDOR_ID = 10755;
+
+    public static final int SERIAL_PORT_CONNECTED = 5;
+    public static final int SERIAL_PORT_DISCONNECTED = 6;
+    public static final int MESSAGE_FROM_SERIAL_PORT = 7;
+    public static final int CTS_CHANGE = 8;
+    public static final int DSR_CHANGE = 9;
 
     public static boolean SERVICE_CONNECTED = false;
+
+    private static final int BAUD_RATE = 115200;
 
     private Handler handler;
     private IBinder binder = new UsbBinder();
 
-    private boolean isStreaming = false;
+    private Context context;
+    private UsbManager usbManager;
+    private UsbDevice device;
+    private UsbDeviceConnection connection;
+    private UsbSerialDevice serialPort;
+
+    private boolean serialPortConnected;
+
+    private String currentLine = "";
+
+    private int sampleCount = 0;
 
     public class UsbBinder extends Binder {
         public MotionSuitService getService() {
@@ -44,7 +64,41 @@ public class MotionSuitService extends Service {
     private UsbSerialInterface.UsbReadCallback mCallback = new UsbSerialInterface.UsbReadCallback() {
         @Override
         public void onReceivedData(byte[] arg0) {
+            try {
+                String str = new String(arg0, "UTF-8");
+                if(str.contains("\n")) {
+                    String[] split = str.split("\n");
+                    currentLine += split[0];
+                    sampleCount += 1;
+                    if(handler != null)
+                        handler.obtainMessage(MotionSuitService.MESSAGE_FROM_SERIAL_PORT, currentLine).sendToTarget();
+                    currentLine = split[1];
+                }
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
+        }
+    };
 
+    /*
+     * State changes in the CTS line will be received here
+     */
+    private UsbSerialInterface.UsbCTSCallback ctsCallback = new UsbSerialInterface.UsbCTSCallback() {
+        @Override
+        public void onCTSChanged(boolean state) {
+            if(handler != null)
+                handler.obtainMessage(MotionSuitService.CTS_CHANGE).sendToTarget();
+        }
+    };
+
+    /*
+     * State changes in the DSR line will be received here
+     */
+    private UsbSerialInterface.UsbDSRCallback dsrCallback = new UsbSerialInterface.UsbDSRCallback() {
+        @Override
+        public void onDSRChanged(boolean state) {
+            if(handler != null)
+                handler.obtainMessage(MotionSuitService.DSR_CHANGE).sendToTarget();
         }
     };
 
@@ -59,7 +113,7 @@ public class MotionSuitService extends Service {
                     arg0.sendBroadcast(intent);
                     connection = usbManager.openDevice(device);
                     serialPortConnected = true;
-                    handler.obtainMessage(OpenBciService.SERIAL_PORT_CONNECTED).sendToTarget();
+                    handler.obtainMessage(MotionSuitService.SERIAL_PORT_CONNECTED).sendToTarget();
                     new ConnectionThread().run();
                 } else // User not accepted our USB connection. Send an Intent to the Main Activity
                 {
@@ -75,7 +129,7 @@ public class MotionSuitService extends Service {
                 arg0.sendBroadcast(intent);
                 serialPortConnected = false;
                 serialPort.close();
-                handler.obtainMessage(OpenBciService.SERIAL_PORT_DISCONNECTED).sendToTarget();
+                handler.obtainMessage(MotionSuitService.SERIAL_PORT_DISCONNECTED).sendToTarget();
             }
         }
     };
@@ -84,7 +138,7 @@ public class MotionSuitService extends Service {
     public void onCreate() {
         this.context = this;
         serialPortConnected = false;
-        OpenBciService.SERVICE_CONNECTED = true;
+        MotionSuitService.SERVICE_CONNECTED = true;
         setFilter();
         usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
         findSerialPortDevice();
@@ -98,7 +152,7 @@ public class MotionSuitService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        OpenBciService.SERVICE_CONNECTED = false;
+        MotionSuitService.SERVICE_CONNECTED = false;
     }
 
     private void findSerialPortDevice() {
@@ -111,7 +165,9 @@ public class MotionSuitService extends Service {
                 int deviceVID = device.getVendorId();
                 int devicePID = device.getProductId();
 
-                if(deviceVID == OPENBCI_VENDOR_ID) {
+                if(handler != null)
+                    handler.obtainMessage(MotionSuitService.MESSAGE_FROM_SERIAL_PORT, String.valueOf(deviceVID)).sendToTarget();
+                if(deviceVID == ARDUINO_VENDOR_ID) {
                     // There is a device connected to our Android device. Try to open it as a Serial Port.
                     requestUserPermission();
                     keep = false;
@@ -205,12 +261,12 @@ public class MotionSuitService extends Service {
 
     }
 
-    public void setHandler(Handler handler) {
-        this.handler = handler;
+    public int getSampleCount() {
+        return sampleCount;
     }
 
-    public boolean isStreaming() {
-        return isStreaming;
+    public void setHandler(Handler handler) {
+        this.handler = handler;
     }
 
     @Nullable

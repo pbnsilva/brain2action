@@ -17,9 +17,16 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
         </activity>
         <service
             android:name="com.curiousloop.brain2action.OpenBciService"
+            android:enabled="true">
+        </service>
+        <service
+            android:name="com.curiousloop.brain2action.MotionSuitService"
             android:enabled="true">
         </service>
     </application>

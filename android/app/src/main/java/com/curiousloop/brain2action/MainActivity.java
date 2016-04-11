@@ -3,14 +3,18 @@ package com.curiousloop.brain2action;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbManager;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.Toolbar;
@@ -21,6 +25,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.lang.ref.WeakReference;
+import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
@@ -106,10 +111,20 @@ public class MainActivity extends AppCompatActivity {
                     mActivity.get().setUIBciDisconnected();
                     break;
                 case OpenBciService.CTS_CHANGE:
-                    Toast.makeText(mActivity.get(), "CTS_CHANGE",Toast.LENGTH_LONG).show();
+                    Toast.makeText(mActivity.get(), "CTS_CHANGE", Toast.LENGTH_LONG).show();
                     break;
                 case OpenBciService.DSR_CHANGE:
-                    Toast.makeText(mActivity.get(), "DSR_CHANGE",Toast.LENGTH_LONG).show();
+                    Toast.makeText(mActivity.get(), "DSR_CHANGE", Toast.LENGTH_LONG).show();
+                    break;
+                case MotionSuitService.MESSAGE_FROM_SERIAL_PORT:
+                    //mActivity.get().setSuitSamplesReceived((String) msg.obj);
+                    Toast.makeText(mActivity.get(), (String)msg.obj, Toast.LENGTH_LONG).show();
+                    break;
+                case MotionSuitService.SERIAL_PORT_CONNECTED:
+                    mActivity.get().setUISuitConnected();
+                    break;
+                case MotionSuitService.SERIAL_PORT_DISCONNECTED:
+                    mActivity.get().setUISuitDisconnected();
                     break;
             }
         }
@@ -165,8 +180,8 @@ public class MainActivity extends AppCompatActivity {
         bciReceivedTextview.setTextColor(Color.parseColor("#000080"));
     }
 
-    private void setSuitSamplesReceived(int value) {
-        suitReceivedTextview.setText(value);
+    private void setSuitSamplesReceived(String value) {
+        suitReceivedTextview.append(value + "\n");
         suitReceivedTextview.setTextColor(Color.parseColor("#000080"));
     }
 
@@ -214,7 +229,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onClickFindDevices(View view) {
-
+        String str = "";
+        UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        for(Map.Entry<String, UsbDevice> e: usbManager.getDeviceList().entrySet()) {
+            str += e.getValue().getVendorId() + "\n";
+        }
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("Your Alert")
+                .setMessage(str)
+                .setCancelable(false)
+                .setPositiveButton("ok", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        // Whatever...
+                    }
+                }).create().show();
     }
 
     public void onClickStartBci(View view) {
@@ -230,7 +259,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onClickStartSuit(View view) {
-        if(suitService != null) {
+        /*if(suitService != null) {
             if(suitService.isStreaming()) {
                 suitService.stop();
                 startSuitButton.setText("Start suit");
@@ -238,7 +267,7 @@ public class MainActivity extends AppCompatActivity {
                 suitService.start();
                 startSuitButton.setText("Stop suit");
             }
-        }
+        }*/
     }
 
 }
