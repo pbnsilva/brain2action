@@ -2,11 +2,13 @@ import glfw
 from OpenGL.GL import *
 from OpenGL.GLU import *
 import math
-import time
-import numpy as np
-
+from model import Model, Animation
+from utils import Quaternion
 
 # Graphical parameters
+WINDOW_WIDTH = 1440
+WINDOW_HEIGHT = 900
+old_x = 0
 theta = 0
 is_mouse_down = False
 GRID_SIZE = 20
@@ -39,6 +41,7 @@ def cursor_position_callback(window, xpos, ypos):
 
 
 def draw_grid():
+    glDisable(GL_LIGHTING)
     for i in xrange(GRID_SIZE * 2):
         glBegin(GL_LINES)
         glColor3f(0.0, 0.0, 0.0)
@@ -47,80 +50,71 @@ def draw_grid():
         glVertex3f(i - GRID_SIZE, 0.0, -GRID_SIZE)
         glVertex3f(i - GRID_SIZE, 0.0, GRID_SIZE)
         glEnd()
+    glEnable(GL_LIGHTING)
 
 
-def draw_axes(x, y, z, xpos=1, ypos=1, zpos=1):
+def draw_axes(x, y, z, xpos=0.5, ypos=0.5, zpos=0.5):
+    glDisable(GL_LIGHTING)
     glPushMatrix()
     glTranslatef(x, y + 0.1, z)
-    glBegin(GL_LINES)
+    glBegin(GL_LINE_STRIP)
     glColor3f(1.0, 0.0, 0.0)
     glVertex3f(0.0, 0.0, 0.0)
     glVertex3f(xpos, 0.0, 0.0)
+    glEnd()
+    glBegin(GL_LINE_STRIP)
     glColor3f(0.0, 1.0, 0.0)
     glVertex3f(0.0, 0.0, 0.0)
     glVertex3f(0.0, ypos, 0.0)
+    glEnd()
+    glBegin(GL_LINE_STRIP)
     glColor3f(0.0, 0.0, 1.0)
     glVertex3f(0.0, 0.0, 0.0)
     glVertex3f(0.0, 0.0, zpos)
     glEnd()
     glPopMatrix()
+    glEnable(GL_LIGHTING)
 
 
-def joint_draw(root):
-    glPushMatrix()
-    glTranslatef(root[1], root[2], root[3])
-    for child in root[4]:
-        glBegin(GL_LINES)
-        glColor3f(1.0, 0.0, 0.0)
-        glVertex3f(0.0, 0.0, 0.0)
-        glColor3f(0.0, 1.0, 0.0)
-        glVertex3f(child[1], child[2], child[3])
-        glEnd()
-        joint_draw(child)
-    glPopMatrix()
+def init_lights():
+    ambient = [.2, .2, .2, 1.0]
+    diffuse = [.7, .7, .7, 1.0]
+    specular = [1, 1, 1, 1]
+    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient)
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse)
+    glLightfv(GL_LIGHT0, GL_SPECULAR, specular)
+
+    pos = [-4, 2.5, 2.5, 1]
+    glLightfv(GL_LIGHT0, GL_POSITION, pos)
+
+    glEnable(GL_LIGHT0)
 
 
-def create_joint(ix, x, y, z):
-    return [ix, x, y, z, []]
+def draw_model(model):
+    glEnableClientState(GL_VERTEX_ARRAY)
+    glVertexPointer(3, GL_DOUBLE, 0, model.vertex_array)
+    glEnableClientState(GL_NORMAL_ARRAY)
+    glNormalPointer(GL_DOUBLE, 0, model.normal_array)
 
+    glCullFace(GL_BACK)
 
-def joint_add_child(parent, child):
-    parent[4].append(child)
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, [0.8, 0.8, 1.0])
+    glDrawArrays(GL_TRIANGLES, 0, len(model.vertex_indices))
+
+    glDisableClientState(GL_VERTEX_ARRAY)
+    glDisableClientState(GL_NORMAL_ARRAY)
 
 
 def main():
-    root = create_joint(0, 0.0, 3.25, 0.0)
-    shoulder_right = create_joint(1, -0.5, 0.0, 0.0)
-    shoulder_left = create_joint(2, 0.5, 0.0, 0.0)
-    back_base = create_joint(3, 0.0, -1.25, 0.0)
-    elbow_right = create_joint(4, 0, -0.5, 0.0)
-    elbow_left = create_joint(5, 0, -0.5, 0.0)
-    wrist_right = create_joint(6, 0, -0.5, 0.0)
-    wrist_left = create_joint(7, 0, -0.5, 0.0)
-    hip_right = create_joint(8, -0.25, 0.0, 0.0)
-    hip_left = create_joint(9, 0.25, 0.0, 0.0)
-    knee_right = create_joint(10, 0.0, -1.0, 0.0)
-    knee_left = create_joint(11, 0.0, -1.0, 0.0)
-    ankle_right = create_joint(12, 0.0, -1.0, 0.0)
-    ankle_left = create_joint(13, 0.0, -1.0, 0.0)
-    joint_add_child(root, shoulder_right)
-    joint_add_child(root, shoulder_left)
-    joint_add_child(root, back_base)
-    joint_add_child(shoulder_right, elbow_right)
-    joint_add_child(shoulder_left, elbow_left)
-    joint_add_child(elbow_right, wrist_right)
-    joint_add_child(elbow_left, wrist_left)
-    joint_add_child(back_base, hip_right)
-    joint_add_child(back_base, hip_left)
-    joint_add_child(hip_right, knee_right)
-    joint_add_child(hip_left, knee_left)
-    joint_add_child(knee_right, ankle_right)
-    joint_add_child(knee_left, ankle_left)
+
+    model = Model('model.ram')
+    animation = Animation('walk.raa')
+    model.add_animation('walk', animation)
 
     if not glfw.init():
         return
 
-    window = glfw.create_window(1024, 768, "Avatar", None, None)
+    window = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, "Avatar", None, None)
     if not window:
         glfw.terminate()
         return
@@ -134,10 +128,18 @@ def main():
 
     glClearColor(0.16, 0.16, 0.16, 1.0)
     glClearDepth(1.0)
+    glEnable(GL_LIGHTING)
+    glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
     glDepthFunc(GL_LEQUAL)
     glShadeModel(GL_SMOOTH)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
     glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
+
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+    glEnable(GL_COLOR_MATERIAL)
+
+    init_lights()
 
     while not glfw.window_should_close(window):
         width, height = glfw.get_framebuffer_size(window)
@@ -149,9 +151,9 @@ def main():
         glLoadIdentity()
         gluPerspective(45.0, ratio, 0.1, 100.0)
 
-        eye_x = 10 * math.sin(theta)
-        eye_z = 10 * math.cos(theta)
-        gluLookAt(eye_x, 5.5, eye_z, 0.0, 1.5, 0.0, 0.0, 1.0, 0.0)
+        eye_x = 5 * math.sin(theta)
+        eye_z = 5 * math.cos(theta)
+        gluLookAt(eye_x, 2, eye_z, 0.0, 0.9, 0.0, 0.0, 1.0, 0.0)
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_MODELVIEW)
@@ -159,8 +161,12 @@ def main():
         glLoadIdentity()
 
         draw_grid()
-        draw_axes(-3, 0, 0)
-        joint_draw(root)
+        draw_axes(-2, 0, 0)
+
+        glColor3f(1.0, 1.0, 1.0)
+        glTranslatef(0, 1.13, 0)
+        draw_model(model)
+        model.update_animation('walk')
 
         glfw.swap_buffers(window)
 
