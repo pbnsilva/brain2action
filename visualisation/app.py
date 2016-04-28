@@ -3,9 +3,8 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 import math
 from model import Model, Animation
-from utils import Quaternion
 
-# Graphical parameters
+
 WINDOW_WIDTH = 1440
 WINDOW_HEIGHT = 900
 old_x = 0

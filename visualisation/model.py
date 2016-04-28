@@ -6,10 +6,13 @@ class Model:
 
     def __init__(self, fpath):
         self._scale_factor = 0.1715316801
-        # self._scale_factor = 1
         self.skeleton = Skeleton()
         self.vertices = []
         self.normals = []
+
+        self.original_vertices = []
+        self.original_normals = []
+
         self.uvs = []
         self.vertex_indices = []
         self.normal_indices = []
@@ -21,66 +24,80 @@ class Model:
         self.vertex_array = np.ndarray(shape=(len(self.vertex_indices) * 3,), dtype=float)
         self.normal_array = np.ndarray(shape=(len(self.vertex_indices) * 3,), dtype=float)
         self.uv_array = np.ndarray(shape=(len(self.vertex_indices) * 2,), dtype=float)
+        self.timer = Timer()
+        self.iter = 0
         self.transform_vertices()
 
     def transform_vertices(self):
+        t = self.timer
         # find the joint transformations and rotations
+        t.start('1')
         joints = self.skeleton.joints
-        transformations = [np.ndarray(shape=(4, 4), dtype=float)] * len(joints)
-        rotations = [np.ndarray(shape=(4, 4), dtype=float)] * len(joints)
-        for i in xrange(len(joints)):
-            joint = joints[i]
-            transformations[i] = joint.get_absolute_transformation() * joint.get_absolute_transformation_inverse()
-            rotations[i] = np.transpose(joint.absolute_rotation.as_matrix() * np.transpose(joint.absolute_rotation.as_matrix()))
-            # transformations[i] = joint.get_absolute_transformation()
-            # rotations[i] = joint.absolute_rotation.as_matrix()
+        transformations = {}
+        rotations = {}
+        for k in joints:
+            joint = joints[k]
+            if k not in transformations:
+                transformations[k] = np.ndarray(shape=(4, 4), dtype=float)
+            if k not in rotations:
+                rotations[k] = np.ndarray(shape=(4, 4), dtype=float)
+            transformations[k] = np.array([[self._scale_factor, 0, 0, 0], [0, self._scale_factor, 0, 0], [0, 0, self._scale_factor, 0], [0, 0, 0, 1]]) * joint.get_absolute_transformation() * joint.original_get_absolute_transformation_inverse()
+            rotations[k] = joint.absolute_rotation.as_matrix() * joint.original_absolute_rotation.as_matrix().transpose()
+        t.stop('1')
 
+        t.start('2')
         # transform the vertices
-        org_vertices = self.vertices
+        org_vertices = self.original_vertices
         influences = self.influences
         for vi in xrange(len(influences)):
-            vertex_influences = influences[vi]
-            bone_id, weight = vertex_influences[0]
-            joint_trans = transformations[bone_id] * weight
-            total_trans = joint_trans
-            for influence_index in xrange(1, len(vertex_influences)):
-                bone_id, weight = vertex_influences[influence_index]
-                joint_trans = transformations[bone_id] * weight
-                total_trans += joint_trans
-            vertex = np.dot(total_trans, [org_vertices[vi * 3], org_vertices[vi * 3 + 1], org_vertices[vi * 3 + 2], 1])
+            t.start('2.1')
+            joint_trans = np.sum(transformations[joint_id] * weight for joint_id, weight in influences[vi])
+            t.stop('2.1')
+            t.start('2.2')
+            vertex = np.dot(joint_trans, np.array([org_vertices[vi * 3], org_vertices[vi * 3 + 1], org_vertices[vi * 3 + 2], 1]))
+            t.stop('2.2')
+            t.start('2.3')
             self.vertices[vi * 3] = vertex[0, 0]
             self.vertices[vi * 3 + 1] = vertex[0, 1]
             self.vertices[vi * 3 + 2] = vertex[0, 2]
+            t.stop('2.3')
+        t.stop('2')
 
+        t.start('3')
         # transform the normals
-        org_normals = self.normals
+        org_normals = self.original_normals
         normal_to_vertex = self.normal_to_vertex
         num_normals = len(org_normals) / 3
         for normal_index in xrange(num_normals):
-            # find the rotation of the corresponding vertex
-            vertex_index = normal_to_vertex[normal_index]
-            vertex_influences = self.influences[vertex_index]
-            bone_id, weight = vertex_influences[0]
-            joint_rot = rotations[bone_id] * weight
-            total_rot = joint_rot
-            for influence_index in xrange(1, len(vertex_influences)):
-                bone_id, weight = vertex_influences[influence_index]
-                joint_rot = rotations[bone_id] * weight
-                total_rot += joint_rot
-            normal = np.dot(total_rot, [org_normals[normal_index * 3], org_normals[normal_index * 3 + 1], org_normals[normal_index * 3 + 2], 1])
+            joint_rot = np.sum(rotations[joint_id] * weight for joint_id, weight in influences[normal_to_vertex[normal_index]])
+            normal = np.dot(joint_rot, np.array([org_normals[normal_index * 3], org_normals[normal_index * 3 + 1], org_normals[normal_index * 3 + 2], 1]))
             self.normals[normal_index * 3] = normal[0, 0]
             self.normals[normal_index * 3 + 1] = normal[0, 1]
             self.normals[normal_index * 3 + 2] = normal[0, 2]
+        t.stop('3')
 
+        t.start('4')
         # fill in vertex arrays
         for index in xrange(len(self.vertex_indices)):
-            self.vertex_array[index * 3] = self.vertices[self.vertex_indices[index] * 3] * self._scale_factor
-            self.vertex_array[index * 3 + 1] = self.vertices[self.vertex_indices[index] * 3 + 1] * self._scale_factor
-            self.vertex_array[index * 3 + 2] = self.vertices[self.vertex_indices[index] * 3 + 2] * self._scale_factor
+            self.vertex_array[index * 3] = self.vertices[self.vertex_indices[index] * 3]
+            self.vertex_array[index * 3 + 1] = self.vertices[self.vertex_indices[index] * 3 + 1]
+            self.vertex_array[index * 3 + 2] = self.vertices[self.vertex_indices[index] * 3 + 2]
 
             self.normal_array[index * 3] = self.normals[self.normal_indices[index] * 3]
             self.normal_array[index * 3 + 1] = self.normals[self.normal_indices[index] * 3 + 1]
             self.normal_array[index * 3 + 2] = self.normals[self.normal_indices[index] * 3 + 2]
+        t.stop('4')
+
+        # print self.iter
+        # print '1 ', t.get('1')
+        # print '2 ', t.get('2')
+        # print '2.1 ', t.get('2.1')
+        # print '2.2 ', t.get('2.2')
+        # print '2.3 ', t.get('2.3')
+        # print '3 ', t.get('3')
+        # print '4 ', t.get('4')
+        # print
+        self.iter += 1
 
     def add_animation(self, name, animation):
         self._animations[name] = {'animation': animation, 'current_frame': 0}
@@ -100,7 +117,6 @@ class Model:
 
             # if the current frame is a keyframe
             if animation.is_keyframe(i, self._animations[name]['current_frame']):
-                print track['joint_id'], animation.get_keyframe(i, self._animations[name]['current_frame'])[1].values
                 self.skeleton.joints[track['joint_id']].relative_rotation = animation.get_keyframe(i, self._animations[name]['current_frame'])[1]
             else:   # interpolate
                 next_keyframe = animation.get_next_keyframe(i, self._animations[name]['current_frame'])
@@ -121,8 +137,8 @@ class Model:
                 rotation = slerp_no_invert(prev_keyframe[1], next_keyframe[1], keyframe_off / float(keyframe_span))
                 self.skeleton.joints[track['joint_id']].relative_rotation = rotation
 
-        for i in xrange(len(self.skeleton.joints)):
-            self.skeleton.joints[i].update_absolutes()
+        for k in self.skeleton.joints:
+            self.skeleton.joints[k].update_absolutes()
 
         self.transform_vertices()
 
@@ -139,17 +155,22 @@ class Model:
                         joint.orientation = Quaternion(*map(float, f.readline().split()))
                         joint.relative_translation = map(float, f.readline().split())
                         joint.relative_rotation = Quaternion(*map(float, f.readline().split()))
+                        joint.original_relative_translation = joint.relative_translation
+                        joint.original_relative_rotation = joint.relative_rotation
                         joint.skeleton = self.skeleton
+                        joint.original_update_absolutes()
                         joint.update_absolutes()
                         self.skeleton.add_joint(joint)
                 elif line.startswith('vertices'):
                     vertice_count = int(line.split()[1])
                     for v in xrange(vertice_count):
                         self.vertices += map(float, f.readline().split())
+                    self.original_vertices = [v for v in self.vertices]
                 elif line.startswith('normals'):
                     normals_count = int(line.split()[1])
                     for n in xrange(normals_count):
                         self.normals += map(float, f.readline().split())
+                    self.original_normals = [v for v in self.normals]
                 elif line.startswith('uvs'):
                     uvs_count = int(line.split()[1])
                     for uv in xrange(uvs_count):
@@ -196,6 +217,11 @@ class Joint:
         self.absolute_rotation = None
         self.skeleton = None
 
+        self.original_relative_translation = None
+        self.original_relative_rotation = None
+        self.original_absolute_translation = None
+        self.original_absolute_rotation = None
+
     def update_absolutes(self):
         if self.parent != -1:
             parent_joint = self.skeleton.joints[self.parent]
@@ -205,6 +231,16 @@ class Joint:
             q = self.orientation * self.relative_rotation
             self.absolute_rotation = Quaternion(*q.values)
             self.absolute_translation = self.relative_translation
+
+    def original_update_absolutes(self):
+        if self.parent != -1:
+            parent_joint = self.skeleton.joints[self.parent]
+            self.original_absolute_rotation = parent_joint.original_absolute_rotation * self.orientation * self.original_relative_rotation
+            self.original_absolute_translation = parent_joint.original_absolute_translation + self.rotate_vector(self.original_relative_translation, parent_joint.original_absolute_rotation)
+        else:
+            q = self.orientation * self.original_relative_rotation
+            self.original_absolute_rotation = Quaternion(*q.values)
+            self.original_absolute_translation = self.original_relative_translation
 
     def rotate_vector(self, vector, quaternion):
         q_vector = Quaternion()
@@ -226,19 +262,41 @@ class Joint:
         trans[1, 3] = self.absolute_translation[1]
         trans[2, 3] = self.absolute_translation[2]
 
-        return np.asmatrix(trans * rot)
+        return np.mat(trans * rot)
 
     def get_absolute_transformation_inverse(self):
         rot = np.transpose(self.absolute_rotation.as_matrix())
 
-        abst = np.mat(np.array([self.absolute_translation[0], self.absolute_translation[1], self.absolute_translation[2], 1])).transpose()
-        temp = rot * abst
+        abst = np.array([self.absolute_translation[0], self.absolute_translation[1], self.absolute_translation[2], 1])
+        temp = np.dot(rot, abst)
         trans = np.identity(4)
-        trans[0, 3] = -temp[0]
-        trans[1, 3] = -temp[1]
-        trans[2, 3] = -temp[2]
+        trans[0, 3] = -temp[0, 0]
+        trans[1, 3] = -temp[0, 1]
+        trans[2, 3] = -temp[0, 2]
 
-        return np.asmatrix(trans * rot)
+        return np.mat(trans * rot)
+
+    def original_get_absolute_transformation(self):
+        rot = self.original_absolute_rotation.as_matrix()
+
+        trans = np.identity(4)
+        trans[0, 3] = self.original_absolute_translation[0]
+        trans[1, 3] = self.original_absolute_translation[1]
+        trans[2, 3] = self.original_absolute_translation[2]
+
+        return np.mat(trans * rot)
+
+    def original_get_absolute_transformation_inverse(self):
+        rot = self.original_absolute_rotation.as_matrix().transpose()
+
+        abst = np.array([self.original_absolute_translation[0], self.original_absolute_translation[1], self.original_absolute_translation[2], 1])
+        temp = np.dot(rot, abst)
+        trans = np.identity(4)
+        trans[0, 3] = -temp[0, 0]
+        trans[1, 3] = -temp[0, 1]
+        trans[2, 3] = -temp[0, 2]
+
+        return np.mat(trans * rot)
 
 
 class Animation:
@@ -258,7 +316,7 @@ class Animation:
                 track = {'joint_id': joint_id, 'frames': []}
                 for keyframe_ind in xrange(num_keyframes):
                     vals = f.readline().split()
-                    track['frames'].append((int(vals[0]), Quaternion(*map(float, vals[1:]))))
+                    track['frames'].append((int(vals[0]), Quaternion(*map(float, vals[1:]))))   # (frame, rotation)
                 self.tracks.append(track)
 
     def is_keyframe(self, track, frame):

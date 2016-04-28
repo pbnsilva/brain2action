@@ -23,6 +23,8 @@ class Quaternion:
         ret[2, 1] = 2 * (values[1] * values[2] + values[3] * values[0])
         ret[2, 2] = 1 - 2 * (values[0] * values[0] + values[1] * values[1])
 
+        ret[3, 3] = 1
+
         return np.mat(ret)
 
     def __mul__(self, other):
