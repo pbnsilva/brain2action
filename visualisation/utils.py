@@ -25,7 +25,7 @@ class Quaternion:
 
         ret[3, 3] = 1
 
-        return np.mat(ret)
+        return ret
 
     def __mul__(self, other):
         ret = Quaternion()

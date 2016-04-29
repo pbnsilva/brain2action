@@ -2,6 +2,7 @@ import glfw
 from OpenGL.GL import *
 from OpenGL.GLU import *
 import math
+from utils import Quaternion
 from model import Model, Animation
 
 
@@ -18,6 +19,7 @@ def error_callback(error, description):
 
 
 def key_callback(window, key, scancode, action, mods):
+    global K
     if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
         glfw.set_window_should_close(window, GL_TRUE)
 
@@ -104,9 +106,26 @@ def draw_model(model):
     glDisableClientState(GL_NORMAL_ARRAY)
 
 
+def draw_joints(model):
+    glPushMatrix()
+    glPointSize(5.0)
+    glBegin(GL_POINTS)
+    for k in model.skeleton.joints:
+        p = model.skeleton.joints[k].absolute_translation
+        glVertex3f(p[0], p[1], p[2])
+    glEnd()
+    glPopMatrix()
+
+
 def main():
 
     model = Model('model.ram')
+
+    model.skeleton.joints[15].relative_rotation = Quaternion(0.5, 0.5, 0.5, 1)
+    for k in model.skeleton.joints:
+        model.skeleton.joints[k].update_absolutes()
+    model.transform_vertices()
+
     animation = Animation('walk.raa')
     model.add_animation('walk', animation)
 
@@ -165,7 +184,12 @@ def main():
         glColor3f(1.0, 1.0, 1.0)
         glTranslatef(0, 1.13, 0)
         draw_model(model)
-        model.update_animation('walk')
+
+        # glTranslatef(0, 1.13, 0)
+        # glScalef(model._scale_factor, model._scale_factor, model._scale_factor)
+        # draw_joints(model)
+
+        # model.update_animation('walk', do_transform_vertices=False)
 
         glfw.swap_buffers(window)
 

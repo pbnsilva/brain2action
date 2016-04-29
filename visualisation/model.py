@@ -7,11 +7,11 @@ class Model:
     def __init__(self, fpath):
         self._scale_factor = 0.1715316801
         self.skeleton = Skeleton()
-        self.vertices = []
-        self.normals = []
+        self.vertices = None
+        self.normals = None
 
-        self.original_vertices = []
-        self.original_normals = []
+        self.original_vertices = None
+        self.original_normals = None
 
         self.uvs = []
         self.vertex_indices = []
@@ -24,85 +24,66 @@ class Model:
         self.vertex_array = np.ndarray(shape=(len(self.vertex_indices) * 3,), dtype=float)
         self.normal_array = np.ndarray(shape=(len(self.vertex_indices) * 3,), dtype=float)
         self.uv_array = np.ndarray(shape=(len(self.vertex_indices) * 2,), dtype=float)
-        self.timer = Timer()
-        self.iter = 0
         self.transform_vertices()
 
     def transform_vertices(self):
-        t = self.timer
         # find the joint transformations and rotations
-        t.start('1')
         joints = self.skeleton.joints
         transformations = {}
         rotations = {}
         for k in joints:
             joint = joints[k]
-            if k not in transformations:
-                transformations[k] = np.ndarray(shape=(4, 4), dtype=float)
-            if k not in rotations:
-                rotations[k] = np.ndarray(shape=(4, 4), dtype=float)
-            transformations[k] = np.array([[self._scale_factor, 0, 0, 0], [0, self._scale_factor, 0, 0], [0, 0, self._scale_factor, 0], [0, 0, 0, 1]]) * joint.get_absolute_transformation() * joint.original_get_absolute_transformation_inverse()
-            rotations[k] = joint.absolute_rotation.as_matrix() * joint.original_absolute_rotation.as_matrix().transpose()
-        t.stop('1')
+            transformations[k] = np.dot(np.dot(np.array([[self._scale_factor, 0, 0, 0], [0, self._scale_factor, 0, 0], [0, 0, self._scale_factor, 0], [0, 0, 0, 1]]), joint.get_absolute_transformation()), joint.original_get_absolute_transformation_inverse())
+            rotations[k] = np.dot(joint.absolute_rotation.as_matrix(), joint.original_absolute_rotation.as_matrix().transpose())
 
-        t.start('2')
         # transform the vertices
+        vertices = self.vertices
         org_vertices = self.original_vertices
         influences = self.influences
-        for vi in xrange(len(influences)):
-            t.start('2.1')
-            joint_trans = np.sum(transformations[joint_id] * weight for joint_id, weight in influences[vi])
-            t.stop('2.1')
-            t.start('2.2')
+        num_vertices = len(vertices) / 3
+        for vi in xrange(num_vertices):
+            joint_trans = transformations[influences[vi][0][0]] * influences[vi][0][1]
+            for joint_id, weight in influences[vi][1:]:
+                joint_trans += transformations[joint_id] * weight
             vertex = np.dot(joint_trans, np.array([org_vertices[vi * 3], org_vertices[vi * 3 + 1], org_vertices[vi * 3 + 2], 1]))
-            t.stop('2.2')
-            t.start('2.3')
-            self.vertices[vi * 3] = vertex[0, 0]
-            self.vertices[vi * 3 + 1] = vertex[0, 1]
-            self.vertices[vi * 3 + 2] = vertex[0, 2]
-            t.stop('2.3')
-        t.stop('2')
+            vertices[vi * 3] = vertex[0]
+            vertices[vi * 3 + 1] = vertex[1]
+            vertices[vi * 3 + 2] = vertex[2]
 
-        t.start('3')
         # transform the normals
+        normals = self.normals
         org_normals = self.original_normals
         normal_to_vertex = self.normal_to_vertex
-        num_normals = len(org_normals) / 3
-        for normal_index in xrange(num_normals):
-            joint_rot = np.sum(rotations[joint_id] * weight for joint_id, weight in influences[normal_to_vertex[normal_index]])
-            normal = np.dot(joint_rot, np.array([org_normals[normal_index * 3], org_normals[normal_index * 3 + 1], org_normals[normal_index * 3 + 2], 1]))
-            self.normals[normal_index * 3] = normal[0, 0]
-            self.normals[normal_index * 3 + 1] = normal[0, 1]
-            self.normals[normal_index * 3 + 2] = normal[0, 2]
-        t.stop('3')
+        num_normals = len(normals) / 3
+        for ni in xrange(num_normals):
+            vi = normal_to_vertex[ni]
+            joint_rot = rotations[influences[vi][0][0]] * influences[vi][0][1]
+            for join_id, weight in influences[vi][1:]:
+                joint_rot += rotations[joint_id] * weight
+            normal = np.dot(joint_rot, np.array([org_normals[ni * 3], org_normals[ni * 3 + 1], org_normals[ni * 3 + 2], 1]))
+            normals[ni * 3] = normal[0]
+            normals[ni * 3 + 1] = normal[1]
+            normals[ni * 3 + 2] = normal[2]
 
-        t.start('4')
         # fill in vertex arrays
-        for index in xrange(len(self.vertex_indices)):
-            self.vertex_array[index * 3] = self.vertices[self.vertex_indices[index] * 3]
-            self.vertex_array[index * 3 + 1] = self.vertices[self.vertex_indices[index] * 3 + 1]
-            self.vertex_array[index * 3 + 2] = self.vertices[self.vertex_indices[index] * 3 + 2]
-
-            self.normal_array[index * 3] = self.normals[self.normal_indices[index] * 3]
-            self.normal_array[index * 3 + 1] = self.normals[self.normal_indices[index] * 3 + 1]
-            self.normal_array[index * 3 + 2] = self.normals[self.normal_indices[index] * 3 + 2]
-        t.stop('4')
-
-        # print self.iter
-        # print '1 ', t.get('1')
-        # print '2 ', t.get('2')
-        # print '2.1 ', t.get('2.1')
-        # print '2.2 ', t.get('2.2')
-        # print '2.3 ', t.get('2.3')
-        # print '3 ', t.get('3')
-        # print '4 ', t.get('4')
-        # print
-        self.iter += 1
+        vertex_array = self.vertex_array
+        normal_array = self.normal_array
+        vertex_indices = self.vertex_indices
+        normal_indices = self.normal_indices
+        for index in xrange(len(vertex_indices)):
+            vi = vertex_indices[index]
+            ni = normal_indices[index]
+            vertex_array[index * 3] = vertices[vi * 3]
+            vertex_array[index * 3 + 1] = vertices[vi * 3 + 1]
+            vertex_array[index * 3 + 2] = vertices[vi * 3 + 2]
+            normal_array[index * 3] = normals[ni * 3]
+            normal_array[index * 3 + 1] = normals[ni * 3 + 1]
+            normal_array[index * 3 + 2] = normals[ni * 3 + 2]
 
     def add_animation(self, name, animation):
         self._animations[name] = {'animation': animation, 'current_frame': 0}
 
-    def update_animation(self, name):
+    def update_animation(self, name, do_transform_vertices=True):
         animation = self._animations[name]['animation']
 
         # if we've reached the end of the animation loop
@@ -140,7 +121,8 @@ class Model:
         for k in self.skeleton.joints:
             self.skeleton.joints[k].update_absolutes()
 
-        self.transform_vertices()
+        if do_transform_vertices:
+            self.transform_vertices()
 
     def _load(self, fpath):
         with open(fpath, 'r') as f:
@@ -163,14 +145,22 @@ class Model:
                         self.skeleton.add_joint(joint)
                 elif line.startswith('vertices'):
                     vertice_count = int(line.split()[1])
-                    for v in xrange(vertice_count):
-                        self.vertices += map(float, f.readline().split())
-                    self.original_vertices = [v for v in self.vertices]
+                    self.vertices = np.ndarray((vertice_count * 3,), dtype=float)
+                    self.original_vertices = np.ndarray((vertice_count * 3,), dtype=float)
+                    for vi in xrange(vertice_count):
+                        points = map(float, f.readline().split())
+                        for i in xrange(3):
+                            self.vertices[vi * 3 + i] = points[i]
+                    np.copyto(self.original_vertices, self.vertices)
                 elif line.startswith('normals'):
                     normals_count = int(line.split()[1])
-                    for n in xrange(normals_count):
-                        self.normals += map(float, f.readline().split())
-                    self.original_normals = [v for v in self.normals]
+                    self.normals = np.ndarray((normals_count * 3,), dtype=float)
+                    self.original_normals = np.ndarray((normals_count * 3,), dtype=float)
+                    for ni in xrange(normals_count):
+                        points = map(float, f.readline().split())
+                        for i in xrange(3):
+                            self.normals[ni * 3 + i] = points[i]
+                    np.copyto(self.original_normals, self.normals)
                 elif line.startswith('uvs'):
                     uvs_count = int(line.split()[1])
                     for uv in xrange(uvs_count):
@@ -262,7 +252,7 @@ class Joint:
         trans[1, 3] = self.absolute_translation[1]
         trans[2, 3] = self.absolute_translation[2]
 
-        return np.mat(trans * rot)
+        return np.dot(trans, rot)
 
     def get_absolute_transformation_inverse(self):
         rot = np.transpose(self.absolute_rotation.as_matrix())
@@ -274,7 +264,7 @@ class Joint:
         trans[1, 3] = -temp[0, 1]
         trans[2, 3] = -temp[0, 2]
 
-        return np.mat(trans * rot)
+        return np.dot(trans, rot)
 
     def original_get_absolute_transformation(self):
         rot = self.original_absolute_rotation.as_matrix()
@@ -284,7 +274,7 @@ class Joint:
         trans[1, 3] = self.original_absolute_translation[1]
         trans[2, 3] = self.original_absolute_translation[2]
 
-        return np.mat(trans * rot)
+        return np.dot(trans, rot)
 
     def original_get_absolute_transformation_inverse(self):
         rot = self.original_absolute_rotation.as_matrix().transpose()
@@ -292,11 +282,11 @@ class Joint:
         abst = np.array([self.original_absolute_translation[0], self.original_absolute_translation[1], self.original_absolute_translation[2], 1])
         temp = np.dot(rot, abst)
         trans = np.identity(4)
-        trans[0, 3] = -temp[0, 0]
-        trans[1, 3] = -temp[0, 1]
-        trans[2, 3] = -temp[0, 2]
+        trans[0, 3] = -temp[0]
+        trans[1, 3] = -temp[1]
+        trans[2, 3] = -temp[2]
 
-        return np.mat(trans * rot)
+        return np.dot(trans, rot)
 
 
 class Animation:
