@@ -22,12 +22,17 @@ for i in sensors:
     mpus[i] = mpu6050.MPU6050()
     mpus[i].dmpInitialize()
     mpus[i].setDMPEnabled(True)
-    mpus[i].setXAccelOffset(offsets[i][0])
-    mpus[i].setYAccelOffset(offsets[i][1])
-    mpus[i].setZAccelOffset(offsets[i][2])
-    mpus[i].setXGyroOffset(offsets[i][3])
-    mpus[i].setYGyroOffset(offsets[i][4])
-    mpus[i].setZGyroOffset(offsets[i][5])
+
+    if i in offsets:
+        mpus[i].setXAccelOffset(offsets[i][0])
+        mpus[i].setYAccelOffset(offsets[i][1])
+        mpus[i].setZAccelOffset(offsets[i][2])
+        mpus[i].setXGyroOffset(offsets[i][3])
+        mpus[i].setYGyroOffset(offsets[i][4])
+        mpus[i].setZGyroOffset(offsets[i][5])
+    else:
+        print('Warning: no offsets for IMU %d' % i)
+
     packetSize = mpus[i].dmpGetFIFOPacketSize()
 
 
